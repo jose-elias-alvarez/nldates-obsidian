@@ -5,6 +5,7 @@ import {
   EditorSuggest,
   EditorSuggestContext,
   EditorSuggestTriggerInfo,
+  Modifier,
   TFile,
 } from "obsidian";
 import type NaturalLanguageDates from "src/main";
@@ -23,15 +24,29 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
     this.app = app;
     this.plugin = plugin;
 
-    // @ts-ignore
-    this.scope.register(["Shift"], "Enter", (evt: KeyboardEvent) => {
-      // @ts-ignore
-      this.suggestions.useSelectedItem(evt);
-      return false;
-    });
+    for (const confirmModifier of ["Shift", "Alt"] as Modifier[]) {
+      this.scope.register([confirmModifier], "Enter", (evt: KeyboardEvent) => {
+        // @ts-ignore
+        this.suggestions.useSelectedItem(evt);
+        return false;
+      });
+    }
 
     if (this.plugin.settings.autosuggestToggleLink) {
-      this.setInstructions([{ command: "Shift", purpose: "Keep text as alias" }]);
+      this.setInstructions([
+        { command: "Shift", purpose: "Keep text as alias" },
+        {
+          command: "Alt",
+          purpose: "Keep text as plain text",
+        },
+      ]);
+    } else {
+      this.setInstructions([
+        {
+          command: "Alt",
+          purpose: "Insert as link",
+        },
+      ]);
     }
   }
 
@@ -70,7 +85,8 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
     }
 
     const relativeDate =
-      context.query.match(/^in ([+-]?\d+)/i) || context.query.match(/^([+-]?\d+)/i);
+      context.query.match(/^in ([+-]?\d+)/i) ||
+      context.query.match(/^([+-]?\d+)/i);
     if (relativeDate) {
       const timeDelta = relativeDate[1];
       return [
@@ -85,21 +101,30 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
       ].filter((items) => items.label.toLowerCase().startsWith(context.query));
     }
 
-    return [{ label: "Today" }, { label: "Yesterday" }, { label: "Tomorrow" }].filter(
-      (items) => items.label.toLowerCase().startsWith(context.query)
-    );
+    return [
+      { label: "Today" },
+      { label: "Yesterday" },
+      { label: "Tomorrow" },
+    ].filter((items) => items.label.toLowerCase().startsWith(context.query));
   }
 
   renderSuggestion(suggestion: IDateCompletion, el: HTMLElement): void {
     el.setText(suggestion.label);
   }
 
-  selectSuggestion(suggestion: IDateCompletion, event: KeyboardEvent | MouseEvent): void {
+  selectSuggestion(
+    suggestion: IDateCompletion,
+    event: KeyboardEvent | MouseEvent,
+  ): void {
     const { editor } = this.context;
 
     const includeAlias = event.shiftKey;
+    const invertMakeIntoLink = event.altKey;
     let dateStr = "";
     let makeIntoLink = this.plugin.settings.autosuggestToggleLink;
+    if (invertMakeIntoLink) {
+      makeIntoLink = !makeIntoLink;
+    }
 
     if (suggestion.label.startsWith("time:")) {
       const timePart = suggestion.label.substring(5);
@@ -113,7 +138,7 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
       dateStr = generateMarkdownLink(
         this.app,
         dateStr,
-        includeAlias ? suggestion.label : undefined
+        includeAlias ? suggestion.label : undefined,
       );
     }
 
@@ -123,7 +148,7 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
   onTrigger(
     cursor: EditorPosition,
     editor: Editor,
-    file: TFile
+    file: TFile,
   ): EditorSuggestTriggerInfo {
     if (!this.plugin.settings.isAutosuggestEnabled) {
       return null;
@@ -144,7 +169,7 @@ export default class DateSuggest extends EditorSuggest<IDateCompletion> {
         line: startPos.line,
         ch: startPos.ch - 1,
       },
-      startPos
+      startPos,
     );
 
     // Short-circuit if `@` as a part of a word (e.g. part of an email address)
